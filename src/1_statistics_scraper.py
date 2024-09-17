@@ -1,9 +1,34 @@
+import argparse
+import os
 import re
-from playwright.sync_api import Playwright, sync_playwright, expect
-from playwright.sync_api import Page
 import shutil
 import tqdm
-import os
+
+from berufe import berufe_list
+from playwright.sync_api import (
+    Playwright,
+    sync_playwright,
+    Page,
+)
+
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--semesters",
+        nargs="+",
+        default="all",
+        help="Semester(s) to consider. Format 20232, 20234 (2 for Summer, 4 for Winter)",
+    )
+    parser.add_argument(
+        "--berufe",
+        choices=["all", "custom"],
+        default="custom",
+        help="Choose 'all' for all berufe or 'custom' to specify a custom list. The custom list can be edited in berufe.py",
+    )
+    return parser.parse_args()
+
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "../data/xls_data")
 IHK_WEBSITE = "https://pes.ihk.de/"
@@ -42,34 +67,38 @@ def download_xls(page: Page, berufe_folder: str, name: str) -> None:
         print(f"No Excel download found for {name}")
 
 
-def run(playwright: Playwright) -> None:
+def run(playwright: Playwright, args: argparse.Namespace) -> None:
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page()
     page.goto(IHK_WEBSITE)
 
     termine_locator = page.locator("select[name='termin']")
     # Get all the option values, 20234, 20232 -> 20094, 20092
-    all_termine = termine_locator.locator("option").evaluate_all(
+    all_semester = termine_locator.locator("option").evaluate_all(
         "options => options.map(option => option.value)"
     )
 
     # termine = ["20234", "20232"]
-    termine = ["20232"]
-    assert set(termine).issubset(
-        set(all_termine)
-    ), "termine must be a subset of all_termine"
+    if args.semesters == "all":
+        semesters = all_semester
+    else:
+        semesters = args.semester
+
+    assert set(semesters).issubset(
+        set(all_semester)
+    ), f"termine must be a subset of all_termine. Available semesters: {all_semester}"
 
     # filter for termine
-    print(f"Termine to iterate through: {termine}")
+    print(f"Getting information for: {semesters}")
     # Iterate over all options and select them
-    for option_termin in tqdm.tqdm(termine, desc="Termine"):
+    for option_semester in tqdm.tqdm(semesters, desc="Termine"):
 
-        termin_folder = os.path.join(DATA_PATH, option_termin)
+        termin_folder = os.path.join(DATA_PATH, option_semester)
         if not os.path.exists(termin_folder):
             print(f"Creating termin folder: {termin_folder}")
             os.makedirs(termin_folder)
 
-        termine_locator.select_option(option_termin)
+        termine_locator.select_option(option_semester)
         page.wait_for_load_state("networkidle")
 
         berufe_locator = page.locator("select.berufe")
@@ -81,37 +110,29 @@ def run(playwright: Playwright) -> None:
             option.get_attribute("value").strip() for option in berufe_options_locators
         ]
 
-        # berufe tha Dastin is interested in
-        selected_berufe = [
-            # "Fachinformatiker/Fachinformatikerin Fachrichtung: Anwendungsentwicklung", # DONE
-            # "Fachinformatiker/Fachinformatikerin Fachrichtung: Daten- und Prozessanalyse", # DONE
-            # "Fachinformatiker/Fachinformatikerin Fachrichtung: Digitale Vernetzung", # DONE
-            # "Fachinformatiker/Fachinformatikerin Fachrichtung: Systemintegration", # DONE
-            # "Fachinformatiker/-in Fachrichtung: Anwendungsentwicklung", # Warum (hat nur 56 Teilnehmer)
-            # "Fachinformatiker/-in Fachrichtung: Systemintegration", # Warum (hat nur 56 Teilnehmer)
-            "Kaufmann / Kauffrau im E-Commerce", 
-            # "Kaufmann / Kauffrau für Marketingkommunikation",
-            # "Kaufmann / Kauffrau für Büromanagement",
-            # "Kaufmann / Kauffrau für Dialogmarketing",
-        ]
+        if args.berufe == "all":
+            selected_berufe = berufe_options_names if input("Download all Berufe? (y/n)") == "y" else exit("Aborted. Start Again.")
+        else:
+            selected_berufe = berufe_list
 
-        interesting_berufe: list[tuple[str, str]] = [
+        # list of the names and the ids. Ids are used in the URL for the respective beruf
+        name_id_berufe_list: list[tuple[str, str]] = [
             (beruf_name, beruf_id)
             for beruf_name, beruf_id in zip(berufe_options_names, berufe_options_ids)
             if beruf_name in selected_berufe
         ]
 
-        print(f"Interesting Berufe: {interesting_berufe}")
+        print(f"Interesting Berufe: {name_id_berufe_list}")
 
-        for beruf_name, beruf_id in tqdm.tqdm(interesting_berufe, desc="Berufe"):
+        for beruf_name, beruf_id in tqdm.tqdm(name_id_berufe_list, desc="Berufe"):
             page.wait_for_load_state("networkidle")
             beruf_page = f"https://pes.ihk.de/Auswertung.cfm?Beruf={beruf_id}"
 
+            # Create the folder for the Beruf
             berufe_folder = os.path.join(
                 termin_folder,
                 beruf_name.replace("/", "").replace(" ", "-").replace("--", "-"),
             )
-
             if not os.path.exists(berufe_folder):
                 print(f"Creating Berufe Folder {berufe_folder}")
                 os.makedirs(berufe_folder)
@@ -119,6 +140,7 @@ def run(playwright: Playwright) -> None:
             # Store the current URL instead of the page object
             start_url = page.url
 
+            # Go to the Beruf Page
             page.goto(beruf_page)
 
             # the standorte are stored in select element with name pm1
@@ -168,7 +190,7 @@ def run(playwright: Playwright) -> None:
                 page.reload()
                 page.wait_for_load_state("networkidle")
                 # Reselect the current termin
-                termine_locator.select_option(option_termin)
+                termine_locator.select_option(option_semester)
                 page.wait_for_load_state("networkidle")
 
             for _ in tqdm.tqdm(range(4), desc="Waiting for networkidle"):
@@ -179,4 +201,5 @@ def run(playwright: Playwright) -> None:
 
 
 with sync_playwright() as playwright:
-    run(playwright)
+    args = parse_args()
+    run(playwright, args)
