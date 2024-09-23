@@ -1,0 +1,38 @@
+# pre commit hook config
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.3.0
+    hooks:
+    - id: check-yaml
+      stages: [commit]
+    - id: end-of-file-fixer
+      stages: [commit]
+    - id: trailing-whitespace
+      stages: [commit]
+    - id: detect-private-key
+      stages: [commit]
+    - id: check-added-large-files
+      stages: [commit]
+
+-   repo: https://github.com/psf/black
+    rev: 22.10.0
+    hooks:
+    - id: black
+      stages: [commit]
+
+-   repo: https://github.com/python-poetry/poetry
+    rev: 1.8.1
+    hooks:
+    -   id: poetry-check
+        stages: [commit]
+        args: ["-C", "."]
+
+# pre push needs install of podman & podman-compose
+-   repo: local
+    hooks:
+    - id: run-unit-tests
+      name: Run unit tests in container
+      entry:  bash -c 'PYTEST=TRUE  podman-compose up --build --force-recreate --remove-orphans'
+      language: system
+      stages: [push]
+      verbose: true
