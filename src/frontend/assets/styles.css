@@ -1,0 +1,43 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f0f0f0;
+}
+
+.dashboard-title {
+    color: #333;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.dropdown-container {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.dropdown-wrapper {
+    width: 32%;
+}
+
+.dropdown-label {
+    margin-bottom: 5px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.dash-dropdown {
+    width: 100%;
+}
+
+.graph-container {
+    height: 50vh;
+    width: 100%;
+    margin-bottom: 20px;
+}
+
+.data-table {
+    width: 100%;
+}
